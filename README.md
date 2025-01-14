@@ -63,7 +63,7 @@ El bot se puede configurar para ejecutarse automáticamente mediante `cron`, aju
    ODOO_PASSWORD=contraseña          # Contraseña de Odoo
 
    # Configuración de Discord
-   DISCORD_WEBHOOK_URL={'PROJECT_NAME': 'WEB_HOOK_URL'}
+   FILE_ID_WEBHOOKS=[str] # ID del archivo sheet para leer desde google drive
    DISCORD_ROLES={'ROLE_1': 'ID_ROLE'}
    ```
 

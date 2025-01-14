@@ -6,6 +6,7 @@ import xmlrpc.client
 from dotenv import load_dotenv
 import os
 import json
+from io import StringIO
 
 
 
@@ -176,45 +177,65 @@ def create_milestone_msg(df):
     return to_invoice_msg
 
 def send_message(df):
-    discord_map = json.loads(os.getenv("DISCORD_WEBHOOK_URL"))
-    project_users = json.loads(os.getenv("DISCORD_ROLES")).get('project')
-    dev_users = json.loads(os.getenv("DISCORD_ROLES")).get('dev')
+    file_id = os.getenv("FILE_ID_WEBHOOKS")
+    # URL pública del archivo de Google Sheets
+    sheet_url = f'https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv'
 
-    for project in project_list:
-        msg = ''
-        proj_df = df[df['project_name'] == project]
-        project_name = proj_df['project_name'].values[0].strip()
-        url_webhook = discord_map.get(project_name)
-        if url_webhook:
-            msg = f"<@&{project_users}> <@&{dev_users}> Hola amigos de {project_name}! ¡Espero que estén muy bien! \n"
-            msg += f"Queríamos recordarles que: \n"
-            expired_milestone_msg = proj_df[proj_df['days_to_invoice'] < 0].message.values
-            not_expired_milestone_msg = proj_df[proj_df['days_to_invoice'] >= 0].message.values
-            if expired_milestone_msg.any():
-                msg += "Uno o más hitos en el proyecto han alcanzado su fecha de vencimiento y necesitabamos saber si podemos proceder con la facturación correspondiente. \n \n"
-                formatted_milestones = "\n".join(f"- {milestone}" for milestone in expired_milestone_msg)
-                msg += f"Los hitos vencidos son: \n {formatted_milestones} \n \n"
+    # Hacer la solicitud HTTP
+    response = requests.get(sheet_url, timeout=20)
 
-            if not_expired_milestone_msg.any() and expired_milestone_msg.any():
-                msg += "Ademas, algunas "
-            else:
-                msg += "Algunas "
+    # Verificar que la solicitud fue exitosa
+    if response.status_code == 200:
+        # Obtener el contenido del CSV como texto
+        response_csv = response.text
+    
+        # Usar StringIO para tratar el string como un archivo
+        csv_data = StringIO(response_csv)
+        
+        # Leer el CSV en un DataFrame
+        data_df = pd.read_csv(csv_data)
 
-            if not_expired_milestone_msg.any():
-                msg += "fechas de cumplimiento de próximos hitos se están acercando. Agradecemos que realicen las revisiones necesarias para saber si estamos en camino o es necesario revisar fechas. \n \n"
-                formatted_milestones = "\n".join(f"- {milestone}" for milestone in not_expired_milestone_msg)
-                msg += f"Los hitos próximos a cumplirse son: \n {formatted_milestones} \n \n"
+        discord_map = data_df.set_index('project')['webhook'].to_dict()
+        project_users = json.loads(os.getenv("DISCORD_ROLES")).get('project')
+        dev_users = json.loads(os.getenv("DISCORD_ROLES")).get('dev')
 
-            msg += "Si encuentran algún obstáculo o necesitan asistencia adicional, por favor no duden en contactarnos para asegurar un avance fluido. \n"
-            msg += 'Gracias por el compromiso y atención de siempre. \nDpto. Gestión'
+        for project in project_list:
+            msg = ''
+            proj_df = df[df['project_name'] == project]
+            project_name = proj_df['project_name'].values[0].strip()
+            url_webhook = discord_map.get(project_name)
+            if url_webhook:
+                msg = f"<@&{project_users}> <@&{dev_users}> Hola amigos de {project_name}! ¡Espero que estén muy bien! \n"
+                msg += f"Queríamos recordarles que: \n"
+                expired_milestone_msg = proj_df[proj_df['days_to_invoice'] < 0].message.values
+                not_expired_milestone_msg = proj_df[proj_df['days_to_invoice'] >= 0].message.values
+                if expired_milestone_msg.any():
+                    msg += "Uno o más hitos en el proyecto han alcanzado su fecha de vencimiento y necesitabamos saber si podemos proceder con la facturación correspondiente. \n \n"
+                    formatted_milestones = "\n".join(f"- {milestone}" for milestone in expired_milestone_msg)
+                    msg += f"Los hitos vencidos son: \n {formatted_milestones} \n \n"
 
-            print(msg)
+                if not_expired_milestone_msg.any() and expired_milestone_msg.any():
+                    msg += "Ademas, algunas "
+                else:
+                    msg += "Algunas "
 
-            data = {
-            "content": msg,
-            "username": "Project Reminder"
-            }
-            requests.post(url_webhook, json=data)
+                if not_expired_milestone_msg.any():
+                    msg += "fechas de cumplimiento de próximos hitos se están acercando. Agradecemos que realicen las revisiones necesarias para saber si estamos en camino o es necesario revisar fechas. \n \n"
+                    formatted_milestones = "\n".join(f"- {milestone}" for milestone in not_expired_milestone_msg)
+                    msg += f"Los hitos próximos a cumplirse son: \n {formatted_milestones} \n \n"
+
+                msg += "Si encuentran algún obstáculo o necesitan asistencia adicional, por favor no duden en contactarnos para asegurar un avance fluido. \n"
+                msg += 'Gracias por el compromiso y atención de siempre. \nDpto. Gestión'
+
+                print(msg)
+
+                data = {
+                "content": msg,
+                "username": "Project Reminder"
+                }
+                requests.post(url_webhook, json=data)
+    else:
+        print(f"Error al descargar el archivo: {response.status_code}")
 
 analysis_date = '2024-01-01'
 analysis_date_datetime = datetime.strptime(analysis_date, "%Y-%m-%d")
